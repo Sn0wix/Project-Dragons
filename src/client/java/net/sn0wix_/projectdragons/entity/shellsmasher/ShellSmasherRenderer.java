@@ -14,10 +14,18 @@ public class ShellSmasherRenderer extends GeoEntityRenderer<ShellSmasherEntity> 
 
     @Override
     public void renderCubesOfBone(MatrixStack poseStack, GeoBone bone, VertexConsumer buffer, int packedLight, int packedOverlay, int colour) {
-        if (bone.getName().equals("saddle") || bone.getName().contains("armor")) {
+        if (bone.getName().contains("armor") && !getAnimatable().isWearingBodyArmor()) {
+            return;
+        }else if (bone.getName().equals("saddle") && !getAnimatable().isSaddled()) {
             return;
         }
 
         super.renderCubesOfBone(poseStack, bone, buffer, packedLight, packedOverlay, colour);
+    }
+
+    // state.isMoving()
+    @Override
+    public float getMotionAnimThreshold(ShellSmasherEntity animatable) {
+        return 0.01f;
     }
 }

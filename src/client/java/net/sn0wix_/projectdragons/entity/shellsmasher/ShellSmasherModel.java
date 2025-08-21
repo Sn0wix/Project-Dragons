@@ -22,7 +22,7 @@ public class ShellSmasherModel extends GeoModel<ShellSmasherEntity> {
 
     @Override
     public Identifier getAnimationResource(ShellSmasherEntity entity) {
-        return Identifier.of(ProjectDragons.MOD_ID, "animations/shellsmasher.animations.json");
+        return Identifier.of(ProjectDragons.MOD_ID, "animations/shellsmasher.animation.json");
     }
 
     @Override

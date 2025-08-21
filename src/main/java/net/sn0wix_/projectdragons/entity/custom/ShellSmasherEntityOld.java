@@ -3,7 +3,6 @@ package net.sn0wix_.projectdragons.entity.custom;
 import net.minecraft.entity.*;
 import net.minecraft.entity.ai.goal.LookAroundGoal;
 import net.minecraft.entity.ai.goal.LookAtEntityGoal;
-import net.minecraft.entity.ai.goal.SitGoal;
 import net.minecraft.entity.ai.goal.WanderAroundFarGoal;
 import net.minecraft.entity.attribute.DefaultAttributeContainer;
 import net.minecraft.entity.attribute.EntityAttributes;
@@ -11,14 +10,13 @@ import net.minecraft.entity.data.DataTracker;
 import net.minecraft.entity.data.TrackedData;
 import net.minecraft.entity.data.TrackedDataHandlerRegistry;
 import net.minecraft.entity.mob.MobEntity;
+import net.minecraft.entity.passive.AbstractHorseEntity;
 import net.minecraft.entity.passive.PassiveEntity;
-import net.minecraft.entity.passive.TameableEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.server.world.ServerWorld;
-import net.minecraft.sound.SoundCategory;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.world.World;
@@ -28,26 +26,21 @@ import software.bernie.geckolib.animatable.instance.AnimatableInstanceCache;
 import software.bernie.geckolib.animation.*;
 import software.bernie.geckolib.util.GeckoLibUtil;
 
-public class ShellSmasherEntity extends TameableEntity implements GeoEntity, VariantHolder<ShellSmasherVariants>, Saddleable {
+public class ShellSmasherEntityOld extends AbstractHorseEntity implements GeoEntity, VariantHolder<ShellSmasherVariants> {
     private static final TrackedData<Integer> VARIANT = DataTracker.registerData(ShellSmasherEntity.class, TrackedDataHandlerRegistry.INTEGER);
-    private static final TrackedData<Boolean> HAS_SADDLE = DataTracker.registerData(ShellSmasherEntity.class, TrackedDataHandlerRegistry.BOOLEAN);
 
     RawAnimation WALK = RawAnimation.begin().then("move.walk", Animation.LoopType.LOOP);
     RawAnimation IDLE = RawAnimation.begin().then("move.idle", Animation.LoopType.LOOP);
-    RawAnimation SIT = RawAnimation.begin().then("sleep.enter", Animation.LoopType.PLAY_ONCE);
-    RawAnimation SITTING = RawAnimation.begin().then("sleep.idle", Animation.LoopType.LOOP);
-    RawAnimation STAND_UP = RawAnimation.begin().then("sleep.wake_up", Animation.LoopType.PLAY_ONCE);
 
     AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
-    public ShellSmasherEntity(EntityType<? extends TameableEntity> entityType, World world) {
+    public ShellSmasherEntityOld(EntityType<? extends AbstractHorseEntity> entityType, World world) {
         super(entityType, world);
         this.ignoreCameraFrustum = true;
     }
 
     @Override
     public void initGoals() {
-        this.goalSelector.add(2, new SitGoal(this));
         this.goalSelector.add(6, new WanderAroundFarGoal(this, 1));
         this.goalSelector.add(7, new LookAtEntityGoal(this, PlayerEntity.class, 6.0f));
         this.goalSelector.add(8, new LookAroundGoal(this));
@@ -62,7 +55,7 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
                 .add(EntityAttributes.GENERIC_JUMP_STRENGTH, 1f);
     }
 
-    /*@Override
+    @Override
     public boolean isBreedingItem(ItemStack stack) {
         return stack.isOf(Items.SEAGRASS);
     }
@@ -83,7 +76,7 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
         }
 
         return super.interactMob(player, hand);
-    }
+    }*/
 
     // Why tf does this enable the whole horse system?
     @Override
@@ -109,84 +102,27 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
             }
         }
         return super.interactMob(player, hand);
-    }*/
-
-    @Override
-    public ActionResult interactMob(PlayerEntity player, Hand hand) {
-        if (!this.getWorld().isClient()) {
-            if (!isTamed() && player.getStackInHand(hand).isOf(Items.SEAGRASS)) {
-                setTamed(true, false);
-                (this.getWorld()).sendEntityStatus(this, EntityStatuses.ADD_POSITIVE_PLAYER_REACTION_PARTICLES);
-                return ActionResult.SUCCESS;
-            }
-
-            if (isTamed() && player.isSneaking()) {
-                this.setSitting(!this.isSitting());
-                this.jumping = false;
-                this.navigation.stop();
-                this.setTarget(null);
-                return ActionResult.SUCCESS;
-            }
-        }
-
-        return super.interactMob(player, hand);
     }
 
-    @Override
-    public boolean canBeSaddled() {
-        return this.isTamed();
-    }
-
-    @Override
-    public void saddle(ItemStack stack, @Nullable SoundCategory soundCategory) {
-        this.dataTracker.set(HAS_SADDLE, true);
-    }
-
-    @Override
-    public boolean isSaddled() {
-        return this.dataTracker.get(HAS_SADDLE);
-    }
-
-    @Override
-    public @Nullable PassiveEntity createChild(ServerWorld world, PassiveEntity entity) {
-        return null;
-    }
-
-    @Override
-    public boolean isBreedingItem(ItemStack stack) {
-        return false;
-    }
-
+    // Variants
     @Override
     protected void initDataTracker(DataTracker.Builder builder) {
         super.initDataTracker(builder);
         builder.add(VARIANT, 0);
-        builder.add(HAS_SADDLE, false);
     }
 
-    @Override
-    public void setSitting(boolean sitting) {
-        super.setSitting(sitting);
-        this.triggerAnim("generic", sitting ? "sit" : "wake_up");
-    }
-
-    // Data saving
     @Override
     public void writeCustomDataToNbt(NbtCompound nbt) {
         super.writeCustomDataToNbt(nbt);
         nbt.putInt("Variant", this.getEntityVariant());
-        nbt.putBoolean("HasSaddle", this.dataTracker.get(HAS_SADDLE));
     }
 
     @Override
     public void readCustomDataFromNbt(NbtCompound nbt) {
         super.readCustomDataFromNbt(nbt);
         this.setEntityVariant(nbt.getInt("Variant"));
-        this.dataTracker.set(HAS_SADDLE, nbt.getBoolean("HasSaddle"));
     }
 
-
-    // Variants
     private void setEntityVariant(int variant) {
         this.dataTracker.set(VARIANT, variant);
     }
@@ -206,14 +142,11 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
     }
 
 
+
     // Geckolib
     @Override
     public void registerControllers(final AnimatableManager.ControllerRegistrar controllers) {
-        controllers.add(new AnimationController<>(this, "generic", 3, (handler -> {
-            if (this.isInSittingPose()) {
-                return handler.setAndContinue(SITTING);
-            }
-
+        controllers.add(new AnimationController<>(this, 3, (handler -> {
             if (handler.isMoving()) {
                 handler.setControllerSpeed(1.3f);
                 return handler.setAndContinue(WALK);
@@ -221,7 +154,7 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
 
             handler.setControllerSpeed(1f);
             return handler.setAndContinue(IDLE);
-        })).setOverrideEasingType(EasingType.EASE_OUT_QUAD).triggerableAnim("sit", SIT).triggerableAnim("stand_up", STAND_UP));
+        })).setOverrideEasingType(EasingType.EASE_OUT_QUAD));
     }
 
 
