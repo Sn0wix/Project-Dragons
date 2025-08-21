@@ -27,12 +27,22 @@ public class ShellSmasherModel extends GeoModel<ShellSmasherEntity> {
 
     @Override
     public void setCustomAnimations(ShellSmasherEntity animatable, long instanceId, AnimationState<ShellSmasherEntity> animationState) {
-        GeoBone head = this.getAnimationProcessor().getBone("h_head");
+        GeoBone neck = this.getAnimationProcessor().getBone("h_head");
+        GeoBone head = this.getAnimationProcessor().getBone("h_head2");
 
-        if (head != null) {
+        if (neck != null && head != null) {
             EntityModelData entityData = animationState.getData(DataTickets.ENTITY_MODEL_DATA);
-            head.setRotX(entityData.headPitch() * ((float) Math.PI / 180F));
-            head.setRotY(entityData.netHeadYaw() * ((float) Math.PI / 180F));
+            float pitch = entityData.headPitch() * ((float) Math.PI / 180F);
+            float yaw = entityData.netHeadYaw() * ((float) Math.PI / 180F);
+
+            pitch = (float) (pitch * Math.cos(pitch));
+            yaw = (float) (yaw * Math.cos(yaw) * 2);
+
+            neck.setRotX(pitch / 2);
+            neck.setRotY(yaw / 2);
+
+            head.setRotX(pitch / 2);
+            head.setRotY(yaw / 2);
         }
     }
 }

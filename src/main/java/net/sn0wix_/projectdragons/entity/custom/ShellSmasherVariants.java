@@ -8,8 +8,8 @@ import java.util.function.IntFunction;
 
 public enum ShellSmasherVariants implements StringIdentifiable {
     FORREST(0, "forrest"),
-    TROPIC(1, "tropic"),
-    SWAMP(2, "swamp");
+    SPRING(1, "spring"),
+    MARSH(2, "marsh");
 
     public static final Codec<ShellSmasherVariants> CODEC;
     private static final IntFunction<ShellSmasherVariants> BY_ID;

@@ -70,19 +70,19 @@ public class ShellSmasherEntity extends AnimalEntity implements GeoEntity, Varia
     @Override
     protected void initDataTracker(DataTracker.Builder builder) {
         super.initDataTracker(builder);
-        builder.add(VARIANT, 0); // store plain enum ID
+        builder.add(VARIANT, 0);
     }
 
     @Override
     public void writeCustomDataToNbt(NbtCompound nbt) {
         super.writeCustomDataToNbt(nbt);
-        nbt.putInt("Variant", this.getEntityVariant()); // write plain ID
+        nbt.putInt("Variant", this.getEntityVariant());
     }
 
     @Override
     public void readCustomDataFromNbt(NbtCompound nbt) {
         super.readCustomDataFromNbt(nbt);
-        this.setEntityVariant(nbt.getInt("Variant")); // read plain ID
+        this.setEntityVariant(nbt.getInt("Variant"));
     }
 
     private void setEntityVariant(int variant) {
