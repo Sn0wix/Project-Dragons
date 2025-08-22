@@ -1,6 +1,5 @@
 package net.sn0wix_.projectdragons.entity.shellsmasher;
 
-import net.minecraft.entity.EntityPose;
 import net.minecraft.util.Identifier;
 import net.sn0wix_.projectdragons.ProjectDragons;
 import net.sn0wix_.projectdragons.entity.custom.ShellSmasherEntity;
@@ -10,8 +9,9 @@ import software.bernie.geckolib.constant.DataTickets;
 import software.bernie.geckolib.model.GeoModel;
 import software.bernie.geckolib.model.data.EntityModelData;
 
+
+// TODO fix: quick custom head anim flashes upon standing up and sitting down
 public class ShellSmasherModel extends GeoModel<ShellSmasherEntity> {
-    private int customAnimDelay = 0;
 
     @Override
     public Identifier getModelResource(ShellSmasherEntity entity) {
@@ -39,9 +39,6 @@ public class ShellSmasherModel extends GeoModel<ShellSmasherEntity> {
 
         pitch = (float) (pitch * Math.cos(pitch));
         yaw = (float) (yaw * Math.cos(yaw) * 2);
-
-        System.out.println(neck.getRotX());
-        System.out.println(neck.getRotY());
 
         neck.setRotX(neck.getRotX() + pitch / 2);
         neck.setRotY(neck.getRotY() + yaw / 2);

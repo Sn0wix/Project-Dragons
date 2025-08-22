@@ -13,7 +13,7 @@
     "sources": "https://github.com/Sn0wix/Project-Dragons",
     "issues": "https://github.com/Sn0wix/Project-Dragons/issues"
   },
-  "license": "CC0-1.0",
+  "license": "MIT",
   "icon": "assets/project-dragons/icon.png",
   "environment": "*",
   "entrypoints": {
