@@ -1,10 +1,7 @@
 package net.sn0wix_.projectdragons.entity.custom;
 
 import net.minecraft.entity.*;
-import net.minecraft.entity.ai.goal.LookAroundGoal;
-import net.minecraft.entity.ai.goal.LookAtEntityGoal;
-import net.minecraft.entity.ai.goal.SitGoal;
-import net.minecraft.entity.ai.goal.WanderAroundFarGoal;
+import net.minecraft.entity.ai.goal.*;
 import net.minecraft.entity.attribute.DefaultAttributeContainer;
 import net.minecraft.entity.attribute.EntityAttributes;
 import net.minecraft.entity.data.DataTracker;
@@ -14,14 +11,17 @@ import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.entity.passive.PassiveEntity;
 import net.minecraft.entity.passive.TameableEntity;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvents;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.world.World;
+import net.minecraft.world.event.GameEvent;
 import org.jetbrains.annotations.Nullable;
 import software.bernie.geckolib.animatable.GeoEntity;
 import software.bernie.geckolib.animatable.instance.AnimatableInstanceCache;
@@ -32,6 +32,8 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
     private static final TrackedData<Integer> VARIANT = DataTracker.registerData(ShellSmasherEntity.class, TrackedDataHandlerRegistry.INTEGER);
     private static final TrackedData<Boolean> HAS_SADDLE = DataTracker.registerData(ShellSmasherEntity.class, TrackedDataHandlerRegistry.BOOLEAN);
 
+    private int ticksToActuallyStandUp = -1;
+
     RawAnimation WALK = RawAnimation.begin().then("move.walk", Animation.LoopType.LOOP);
     RawAnimation IDLE = RawAnimation.begin().then("move.idle", Animation.LoopType.LOOP);
     RawAnimation SIT = RawAnimation.begin().then("sleep.enter", Animation.LoopType.PLAY_ONCE);
@@ -40,6 +42,20 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
 
     AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
+    AnimationController<ShellSmasherEntity> genericController = new AnimationController<>(this, "generic", 3, (handler -> {
+        if (this.isSitting()) {
+            return handler.setAndContinue(SITTING);
+        }
+
+        if (handler.isMoving()) {
+            handler.setControllerSpeed(1.3f);
+            return handler.setAndContinue(WALK);
+        }
+        handler.setControllerSpeed(1f);
+        return handler.setAndContinue(IDLE);
+    })).setOverrideEasingType(EasingType.EASE_OUT_QUAD).triggerableAnim("sit", SIT).triggerableAnim("stand_up", STAND_UP);
+
+
     public ShellSmasherEntity(EntityType<? extends TameableEntity> entityType, World world) {
         super(entityType, world);
         this.ignoreCameraFrustum = true;
@@ -47,6 +63,7 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
 
     @Override
     public void initGoals() {
+        this.goalSelector.add(0, new SwimGoal(this));
         this.goalSelector.add(2, new SitGoal(this));
         this.goalSelector.add(6, new WanderAroundFarGoal(this, 1));
         this.goalSelector.add(7, new LookAtEntityGoal(this, PlayerEntity.class, 6.0f));
@@ -57,81 +74,92 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
         return MobEntity.createMobAttributes()
                 .add(EntityAttributes.GENERIC_MOVEMENT_SPEED, 0.2f)
                 .add(EntityAttributes.GENERIC_SAFE_FALL_DISTANCE, 6)
-                .add(EntityAttributes.GENERIC_MAX_HEALTH, 25)
+                .add(EntityAttributes.GENERIC_MAX_HEALTH, 40)
                 .add(EntityAttributes.GENERIC_KNOCKBACK_RESISTANCE, 0.9f)
                 .add(EntityAttributes.GENERIC_JUMP_STRENGTH, 1f);
     }
 
-    /*@Override
-    public boolean isBreedingItem(ItemStack stack) {
-        return stack.isOf(Items.SEAGRASS);
+    public void toggleSitting() {
+        if (this.isSitting()) {
+            stopSitting();
+        } else {
+            startSitting();
+        }
+    }
+
+    public void startSitting() {
+        if (this.isSitting()) {
+            return;
+        }
+        this.playSound(SoundEvents.ENTITY_CAMEL_SIT);
+        this.setPose(EntityPose.SITTING);
+        genericController.tryTriggerAnimation("sit");
+        this.emitGameEvent(GameEvent.ENTITY_ACTION);
+        setInSittingPose(true);
+        setSitting(true);
+    }
+
+    public void stopSitting() {
+        if (!this.isSitting()) {
+            return;
+        }
+
+        this.playSound(SoundEvents.ENTITY_CAMEL_STAND);
+        genericController.tryTriggerAnimation("stand_up");
+        this.setPose(EntityPose.STANDING);
+        this.emitGameEvent(GameEvent.ENTITY_ACTION);
+        ticksToActuallyStandUp = 40;
+    }
+
+    public boolean isSitting() {
+        return getPose().equals(EntityPose.SITTING);
     }
 
     @Override
-    public @Nullable PassiveEntity createChild(ServerWorld world, PassiveEntity entity) {
-        return null;
-    }
-
-    /*@Override
     public ActionResult interactMob(PlayerEntity player, Hand hand) {
-        ItemStack itemStack = player.getStackInHand(hand);
-        if (!itemStack.isEmpty() && itemStack.isOf(Items.SEAGRASS) && !isTame()) {
-            this.bondWithPlayer(player);
-            // SADDLED_FLAG
-            this.setFlag(4, true);
+        ItemStack itemstack = player.getStackInHand(hand);
+        Item item = itemstack.getItem();
+        Item itemForTaming = Items.SEAGRASS;
+
+        if (item == itemForTaming && !isTamed()) {
+            if (this.getWorld().isClient()) {
+                return ActionResult.CONSUME;
+            } else {
+                if (!player.getAbilities().creativeMode) {
+                    itemstack.decrement(1);
+                }
+                super.setOwner(player);
+                this.navigation.recalculatePath();
+                this.setTarget(null);
+                this.getWorld().sendEntityStatus(this, (byte) 7);
+                return ActionResult.SUCCESS;
+            }
+        }
+
+        if (isTamed() && hand == Hand.MAIN_HAND && player.isSneaking() && item != itemForTaming && !isBreedingItem(itemstack)) {
+            toggleSitting();
             return ActionResult.SUCCESS;
         }
 
         return super.interactMob(player, hand);
     }
 
-    // Why tf does this enable the whole horse system?
     @Override
-    public boolean canUseSlot(EquipmentSlot slot) {
-        return true;
-    }
+    public void tick() {
+        super.tick();
 
-    @Override
-    public ActionResult interactMob(PlayerEntity player, Hand hand) {
-        boolean bl;
-        boolean bl2 = bl = !this.isBaby() && this.isTame() && player.shouldCancelInteraction();
-        if (this.hasPassengers() || bl) {
-            return super.interactMob(player, hand);
-        }
-        ItemStack itemStack = player.getStackInHand(hand);
-        if (!itemStack.isEmpty()) {
-            if (this.isBreedingItem(itemStack)) {
-                return this.interactHorse(player, itemStack);
-            }
-            if (!this.isTame()) {
-                this.playAngrySound();
-                return ActionResult.success(this.getWorld().isClient);
-            }
-        }
-        return super.interactMob(player, hand);
-    }*/
-
-    @Override
-    public ActionResult interactMob(PlayerEntity player, Hand hand) {
         if (!this.getWorld().isClient()) {
-            if (!isTamed() && player.getStackInHand(hand).isOf(Items.SEAGRASS)) {
-                setTamed(true, false);
-                (this.getWorld()).sendEntityStatus(this, EntityStatuses.ADD_POSITIVE_PLAYER_REACTION_PARTICLES);
-                return ActionResult.SUCCESS;
-            }
-
-            if (isTamed() && player.isSneaking()) {
-                this.setSitting(!this.isSitting());
-                this.jumping = false;
-                this.navigation.stop();
-                this.setTarget(null);
-                return ActionResult.SUCCESS;
+            if (ticksToActuallyStandUp > 0) {
+                ticksToActuallyStandUp--;
+            } else if (ticksToActuallyStandUp == 0) {
+                ticksToActuallyStandUp--;
+                setInSittingPose(false);
+                setSitting(false);
             }
         }
-
-        return super.interactMob(player, hand);
     }
 
+    // Saddle wip
     @Override
     public boolean canBeSaddled() {
         return this.isTamed();
@@ -157,6 +185,8 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
         return false;
     }
 
+
+    // Data saving and syncing
     @Override
     protected void initDataTracker(DataTracker.Builder builder) {
         super.initDataTracker(builder);
@@ -164,13 +194,6 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
         builder.add(HAS_SADDLE, false);
     }
 
-    @Override
-    public void setSitting(boolean sitting) {
-        super.setSitting(sitting);
-        this.triggerAnim("generic", sitting ? "sit" : "wake_up");
-    }
-
-    // Data saving
     @Override
     public void writeCustomDataToNbt(NbtCompound nbt) {
         super.writeCustomDataToNbt(nbt);
@@ -209,21 +232,8 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
     // Geckolib
     @Override
     public void registerControllers(final AnimatableManager.ControllerRegistrar controllers) {
-        controllers.add(new AnimationController<>(this, "generic", 3, (handler -> {
-            if (this.isInSittingPose()) {
-                return handler.setAndContinue(SITTING);
-            }
-
-            if (handler.isMoving()) {
-                handler.setControllerSpeed(1.3f);
-                return handler.setAndContinue(WALK);
-            }
-
-            handler.setControllerSpeed(1f);
-            return handler.setAndContinue(IDLE);
-        })).setOverrideEasingType(EasingType.EASE_OUT_QUAD).triggerableAnim("sit", SIT).triggerableAnim("stand_up", STAND_UP));
+        controllers.add(genericController);
     }
-
 
     @Override
     public AnimatableInstanceCache getAnimatableInstanceCache() {

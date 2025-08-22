@@ -27,7 +27,7 @@ import software.bernie.geckolib.animation.*;
 import software.bernie.geckolib.util.GeckoLibUtil;
 
 public class ShellSmasherEntityOld extends AbstractHorseEntity implements GeoEntity, VariantHolder<ShellSmasherVariants> {
-    private static final TrackedData<Integer> VARIANT = DataTracker.registerData(ShellSmasherEntity.class, TrackedDataHandlerRegistry.INTEGER);
+    private static final TrackedData<Integer> VARIANT = DataTracker.registerData(ShellSmasherEntityOld.class, TrackedDataHandlerRegistry.INTEGER);
 
     RawAnimation WALK = RawAnimation.begin().then("move.walk", Animation.LoopType.LOOP);
     RawAnimation IDLE = RawAnimation.begin().then("move.idle", Animation.LoopType.LOOP);
