@@ -1,6 +1,5 @@
 package net.sn0wix_.projectdragons.entity.custom;
 
-import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
 import net.minecraft.entity.*;
 import net.minecraft.entity.ai.goal.*;
 import net.minecraft.entity.attribute.DefaultAttributeContainer;
@@ -17,18 +16,14 @@ import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.nbt.NbtCompound;
-import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvent;
 import net.minecraft.sound.SoundEvents;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Arm;
 import net.minecraft.util.Hand;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.util.math.*;
 import net.minecraft.world.World;
 import net.minecraft.world.event.GameEvent;
 import org.jetbrains.annotations.Nullable;
@@ -48,6 +43,7 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
 
     // Maximum yaw change per tick (degrees) when syncing to rider
     private float maxYawChange = 3.0f;
+    public boolean riderIsJumping = false;
 
     RawAnimation WALK = RawAnimation.begin().then("move.walk", Animation.LoopType.LOOP);
     RawAnimation FLY = RawAnimation.begin().then("move.fly", Animation.LoopType.LOOP);
@@ -74,7 +70,6 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
             return handler.setAndContinue(FLY);
         }
     })).triggerableAnim("sit", SIT).triggerableAnim("stand_up", STAND_UP);
-
 
     public ShellSmasherEntity(EntityType<? extends TameableEntity> entityType, World world) {
         super(entityType, world);
@@ -197,6 +192,10 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
                 this.setJumping(false);
             }
         }
+
+        if (riderIsJumping && !dataTracker.get(IS_FLYING)/* && standUpMovementLockTicks <= 0*/) {
+            takeOff();
+        }
     }
 
     public boolean isMovementLocked() {
@@ -243,47 +242,104 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
     }
 
     @Override
+    public boolean isPushable() {
+        return !this.hasPassengers() || !isSitting();
+    }
+
+    @Override
     public void travel(Vec3d movementInput) {
-        if (this.isMovementLocked()) {
-            super.travel(Vec3d.ZERO);
-            return;
-        }
-
         LivingEntity controller = this.getControllingPassenger();
+
         if (this.canBeControlledByRider() && controller != null) {
-            // Smoothly align with rider orientation using maxYawChange
-            applyLimitedYawTowards(controller.getYaw());
-            // Keep some pitch responsiveness but do not affect collision too much
-            this.setPitch(controller.getPitch() * 0.5f);
-
-            // Read rider inputs (forward/strafe)
-            float forward = 0.0f;
-            System.out.println(controller.isFallFlying());
-
-            if (controller instanceof PlayerEntity player) {
-                forward = player.forwardSpeed;
+            if (this.isMovementLocked()) {
+                super.travel(Vec3d.ZERO);
+                return;
             }
 
-            // backwords speed tweaks
-            if (forward < 0) {
-                forward *= 0.5f;
-            }
+            if (dataTracker.get(IS_FLYING)) {
+                this.updateVelocity((float) getAttributeBaseValue(EntityAttributes.GENERIC_MOVEMENT_SPEED), movementInput);
+                this.move(MovementType.SELF, this.getVelocity());
+                this.setVelocity(this.getVelocity().multiply(0.91F));
+            } else {
+                // Smoothly align with rider orientation using maxYawChange
+                applyLimitedYawTowards(controller.getYaw());
+                // Keep some pitch responsiveness but do not affect collision too much
+                this.setPitch(controller.getPitch() * 0.5f);
 
-            // Move
-            Vec3d input = new Vec3d(0, 0.0, forward);
-            super.travel(input);
-            return;
+                // Read rider inputs (forward/strafe)
+                float forward = 0.0f;
+
+                if (controller instanceof PlayerEntity player) {
+                    forward = player.forwardSpeed;
+                }
+
+                // backwords speed tweaks
+                if (forward < 0) {
+                    forward *= 0.5f;
+                }
+
+                // Move
+                Vec3d input = new Vec3d(0, 0.0, forward);
+                super.travel(input);
+                return;
+            }
         }
 
         super.travel(movementInput);
     }
 
+    @Override
+    protected Vec3d getControlledMovementInput(PlayerEntity controllingPlayer, Vec3d movementInput) {
+        if (dataTracker.get(IS_FLYING)) {
+            float f = controllingPlayer.sidewaysSpeed;
+            float g = 0.0F;
+            float h = 0.0F;
+            if (controllingPlayer.forwardSpeed != 0.0F) {
+                float i = MathHelper.cos(controllingPlayer.getPitch() * ((float) Math.PI / 180F));
+                float j = -MathHelper.sin(controllingPlayer.getPitch() * ((float) Math.PI / 180F));
+                if (controllingPlayer.forwardSpeed < 0.0F) {
+                    i *= -0.5F;
+                    j *= -0.5F;
+                }
+
+                h = j;
+                g = i;
+            }
+
+            if (riderIsJumping) {
+                h += 0.5F;
+            }
+
+            return (new Vec3d((double) f, (double) h, (double) g)).multiply((double) 3.9F * this.getAttributeValue(EntityAttributes.GENERIC_MOVEMENT_SPEED));
+        }
+        return super.getControlledMovementInput(controllingPlayer, movementInput);
+    }
+
+    protected Vec2f getGhastRotation(LivingEntity controllingEntity) {
+        return new Vec2f(controllingEntity.getPitch() * 0.5F, controllingEntity.getYaw());
+    }
+
+    @Override
+    protected void tickControlled(PlayerEntity controllingPlayer, Vec3d movementInput) {
+        super.tickControlled(controllingPlayer, movementInput);
+        if (dataTracker.get(IS_FLYING)) {
+            Vec2f vec2f = this.getGhastRotation(controllingPlayer);
+            float f = this.getYaw();
+            float g = MathHelper.wrapDegrees(vec2f.y - f);
+            float h = 0.08F;
+            f += g * 0.08F;
+            this.setRotation(f, vec2f.x);
+            /*this.prevYaw = */this.bodyYaw = this.headYaw = f;
+        }
+    }
+
     public void takeOff() {
         this.jump();
-        World var2 = this.getWorld();
-        if (var2 instanceof ServerWorld world) {
-            this.setFlying(true);
-        }
+        this.setFlying(true);
+        this.setNoGravity(true);
+        this.fallDistance = 0;
+        this.emitGameEvent(GameEvent.ENTITY_ACTION);
+        this.playSound(SoundEvents.ENTITY_PHANTOM_FLAP, 0.6f, 1.0f);
     }
 
     @Override

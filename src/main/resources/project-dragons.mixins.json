@@ -3,7 +3,7 @@
 	"package": "net.sn0wix_.projectdragons.mixin",
 	"compatibilityLevel": "JAVA_21",
 	"mixins": [
-		"ExampleMixin"
+      "ServerPlayerJumpingMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1
