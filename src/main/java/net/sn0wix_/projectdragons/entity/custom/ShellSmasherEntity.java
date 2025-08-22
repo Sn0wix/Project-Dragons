@@ -1,5 +1,6 @@
 package net.sn0wix_.projectdragons.entity.custom;
 
+import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
 import net.minecraft.entity.*;
 import net.minecraft.entity.ai.goal.*;
 import net.minecraft.entity.attribute.DefaultAttributeContainer;
@@ -16,6 +17,7 @@ import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.nbt.NbtCompound;
+import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvents;
@@ -39,8 +41,9 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
 
     private static final TrackedData<Integer> VARIANT = DataTracker.registerData(ShellSmasherEntity.class, TrackedDataHandlerRegistry.INTEGER);
     private static final TrackedData<Boolean> HAS_SADDLE = DataTracker.registerData(ShellSmasherEntity.class, TrackedDataHandlerRegistry.BOOLEAN);
+    private static final TrackedData<Boolean> IS_FLYING = DataTracker.registerData(ShellSmasherEntity.class, TrackedDataHandlerRegistry.BOOLEAN);
 
-    private boolean isFlying = false;
+
     private int standUpMovementLockTicks = 0;
 
     // Maximum yaw change per tick (degrees) when syncing to rider
@@ -56,7 +59,7 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
     AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
     AnimationController<ShellSmasherEntity> genericController = new AnimationController<>(this, "generic", 3, (handler -> {
-        if (this.isOnGround()) {
+        if (!isFlying()) {
             if (this.isSitting()) {
                 return handler.setAndContinue(SITTING);
             }
@@ -97,10 +100,12 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
     }
 
     public void toggleSitting() {
-        if (this.isSitting()) {
-            stopSitting();
-        } else {
-            startSitting();
+        if (!this.getWorld().isClient()) {
+            if (this.isSitting()) {
+                stopSitting();
+            } else {
+                startSitting();
+            }
         }
     }
 
@@ -222,11 +227,11 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
     }
 
     public boolean isFlying() {
-        return isFlying;
+        return this.dataTracker.get(IS_FLYING);
     }
 
     public void setFlying(boolean flying) {
-        isFlying = flying;
+        this.dataTracker.set(IS_FLYING, flying);
     }
 
     public void setMaxYawChange(float degreesPerTick) {
@@ -253,6 +258,7 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
 
             // Read rider inputs (forward/strafe)
             float forward = 0.0f;
+            System.out.println(controller.isFallFlying());
 
             if (controller instanceof PlayerEntity player) {
                 forward = player.forwardSpeed;
@@ -273,12 +279,16 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
     }
 
     public void takeOff() {
-
+        this.jump();
+        World var2 = this.getWorld();
+        if (var2 instanceof ServerWorld world) {
+            this.setFlying(true);
+        }
     }
 
     @Override
     protected Vec3d getPassengerAttachmentPos(Entity passenger, EntityDimensions dimensions, float scaleFactor) {
-        return super.getPassengerAttachmentPos(passenger, dimensions, scaleFactor).add(0, 0.05, 0);
+        return super.getPassengerAttachmentPos(passenger, dimensions, scaleFactor).add(0, isSitting() ? -0.15 : 0.05, 0);
     }
 
     // Dismounting: try multiple offsets around the entity for a safer exit
@@ -413,6 +423,7 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
         super.initDataTracker(builder);
         builder.add(VARIANT, 0);
         builder.add(HAS_SADDLE, false);
+        builder.add(IS_FLYING, false);
     }
 
     @Override
@@ -420,6 +431,8 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
         super.writeCustomDataToNbt(nbt);
         nbt.putInt("Variant", this.getEntityVariant());
         nbt.putBoolean("HasSaddle", this.dataTracker.get(HAS_SADDLE));
+        nbt.putBoolean("IsFlying", this.dataTracker.get(IS_FLYING));
+        nbt.putBoolean("IsInSittingPose", this.isInSittingPose());
     }
 
     @Override
@@ -427,6 +440,8 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
         super.readCustomDataFromNbt(nbt);
         this.setEntityVariant(nbt.getInt("Variant"));
         this.dataTracker.set(HAS_SADDLE, nbt.getBoolean("HasSaddle"));
+        this.dataTracker.set(IS_FLYING, nbt.getBoolean("IsFlying"));
+        this.setInSittingPose(nbt.getBoolean("IsInSittingPose"));
     }
 
     // Variants
