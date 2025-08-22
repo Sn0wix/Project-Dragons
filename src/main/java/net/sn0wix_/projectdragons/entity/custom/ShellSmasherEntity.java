@@ -25,6 +25,7 @@ import net.minecraft.util.Hand;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 import net.minecraft.world.event.GameEvent;
@@ -39,9 +40,14 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
     private static final TrackedData<Integer> VARIANT = DataTracker.registerData(ShellSmasherEntity.class, TrackedDataHandlerRegistry.INTEGER);
     private static final TrackedData<Boolean> HAS_SADDLE = DataTracker.registerData(ShellSmasherEntity.class, TrackedDataHandlerRegistry.BOOLEAN);
 
+    private boolean isFlying = false;
     private int standUpMovementLockTicks = 0;
 
+    // Maximum yaw change per tick (degrees) when syncing to rider
+    private float maxYawChange = 3.0f;
+
     RawAnimation WALK = RawAnimation.begin().then("move.walk", Animation.LoopType.LOOP);
+    RawAnimation FLY = RawAnimation.begin().then("move.fly", Animation.LoopType.LOOP);
     RawAnimation IDLE = RawAnimation.begin().then("move.idle", Animation.LoopType.LOOP);
     RawAnimation SIT = RawAnimation.begin().then("sleep.enter", Animation.LoopType.PLAY_ONCE);
     RawAnimation SITTING = RawAnimation.begin().then("sleep.idle", Animation.LoopType.LOOP);
@@ -50,22 +56,27 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
     AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
     AnimationController<ShellSmasherEntity> genericController = new AnimationController<>(this, "generic", 3, (handler -> {
-        if (this.isSitting()) {
-            return handler.setAndContinue(SITTING);
-        }
+        if (this.isOnGround()) {
+            if (this.isSitting()) {
+                return handler.setAndContinue(SITTING);
+            }
 
-        if (handler.isMoving()) {
-            handler.setControllerSpeed(1.3f);
-            return handler.setAndContinue(WALK);
+            if (handler.isMoving()) {
+                // TODO reverse walking anim
+                return handler.setAndContinue(WALK);
+            }
+
+            return handler.setAndContinue(IDLE);
+        } else {
+            return handler.setAndContinue(FLY);
         }
-        handler.setControllerSpeed(1f);
-        return handler.setAndContinue(IDLE);
-    })).setOverrideEasingType(EasingType.EASE_OUT_QUAD).triggerableAnim("sit", SIT).triggerableAnim("stand_up", STAND_UP);
+    })).triggerableAnim("sit", SIT).triggerableAnim("stand_up", STAND_UP);
 
 
     public ShellSmasherEntity(EntityType<? extends TameableEntity> entityType, World world) {
         super(entityType, world);
         this.ignoreCameraFrustum = true;
+        this.setMovementSpeed((float) this.getAttributeValue(EntityAttributes.GENERIC_MOVEMENT_SPEED) / 4); //?
     }
 
     @Override
@@ -82,8 +93,7 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
                 .add(EntityAttributes.GENERIC_MOVEMENT_SPEED, 0.2f)
                 .add(EntityAttributes.GENERIC_SAFE_FALL_DISTANCE, 6)
                 .add(EntityAttributes.GENERIC_MAX_HEALTH, 40)
-                .add(EntityAttributes.GENERIC_KNOCKBACK_RESISTANCE, 0.9f)
-                .add(EntityAttributes.GENERIC_JUMP_STRENGTH, 1f);
+                .add(EntityAttributes.GENERIC_KNOCKBACK_RESISTANCE, 0.9f);
     }
 
     public void toggleSitting() {
@@ -95,9 +105,7 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
     }
 
     public void startSitting() {
-        if (this.isSitting()) {
-            return;
-        }
+        if (this.isSitting()) return;
 
         this.playSound(SoundEvents.ENTITY_CAMEL_SIT);
         setInSittingPose(true);
@@ -106,12 +114,12 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
         this.setPose(EntityPose.SITTING);
         genericController.tryTriggerAnimation("sit");
         this.emitGameEvent(GameEvent.ENTITY_ACTION);
+
+        this.navigation.stop();
     }
 
     public void stopSitting() {
-        if (!this.isSitting()) {
-            return;
-        }
+        if (!this.isSitting()) return;
 
         this.playSound(SoundEvents.ENTITY_CAMEL_STAND);
         setInSittingPose(false);
@@ -151,7 +159,7 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
             }
         }
 
-        // sitting
+        // sitting toggle
         if (isTamed() && hand == Hand.MAIN_HAND && player.isSneaking() && !isBreedingItem(itemstack)) {
             toggleSitting();
             return ActionResult.SUCCESS;
@@ -160,6 +168,9 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
         // start riding
         if (!this.isBreedingItem(player.getStackInHand(hand)) && this.isSaddled() && !this.hasPassengers() && !player.shouldCancelInteraction()) {
             if (!this.getWorld().isClient) {
+                player.setYaw(this.getYaw());
+                //player.setBodyYaw(this.getBodyYaw());
+                //player.setHeadYaw(this.getHeadYaw());
                 player.startRiding(this);
             }
             return ActionResult.success(this.getWorld().isClient);
@@ -183,67 +194,171 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
         }
     }
 
-    private boolean isMovementLocked() {
+    public boolean isMovementLocked() {
         return standUpMovementLockTicks > 0 || this.isSitting();
+    }
+
+    // Riding control
+    @Override
+    protected boolean canAddPassenger(Entity passenger) {
+        return !this.hasPassengers() && passenger instanceof LivingEntity && super.canAddPassenger(passenger);
+    }
+
+    public boolean canBeControlledByRider() {
+        return this.isSaddled() && this.getControllingPassenger() instanceof PlayerEntity;
+    }
+
+    // Limit how quickly we rotate towards the rider's yaw
+    private void applyLimitedYawTowards(float targetYaw) {
+        float current = this.getYaw();
+        float delta = MathHelper.wrapDegrees(targetYaw - current);
+        float clamped = MathHelper.clamp(delta, -maxYawChange, maxYawChange);
+        float newYaw = current + clamped;
+
+        this.prevYaw = this.getYaw();
+        this.setYaw(newYaw);
+        this.setHeadYaw(newYaw);
+        this.bodyYaw = newYaw;
+    }
+
+    public boolean isFlying() {
+        return isFlying;
+    }
+
+    public void setFlying(boolean flying) {
+        isFlying = flying;
+    }
+
+    public void setMaxYawChange(float degreesPerTick) {
+        this.maxYawChange = Math.max(0.0f, degreesPerTick);
+    }
+
+    public float getMaxYawChange() {
+        return this.maxYawChange;
     }
 
     @Override
     public void travel(Vec3d movementInput) {
-        // Prevent movement while sitting or during stand-up lock
         if (this.isMovementLocked()) {
             super.travel(Vec3d.ZERO);
             return;
         }
+
+        LivingEntity controller = this.getControllingPassenger();
+        if (this.canBeControlledByRider() && controller != null) {
+            // Smoothly align with rider orientation using maxYawChange
+            applyLimitedYawTowards(controller.getYaw());
+            // Keep some pitch responsiveness but do not affect collision too much
+            this.setPitch(controller.getPitch() * 0.5f);
+
+            // Read rider inputs (forward/strafe)
+            float forward = 0.0f;
+
+            if (controller instanceof PlayerEntity player) {
+                forward = player.forwardSpeed;
+            }
+
+            // backwords speed tweaks
+            if (forward < 0) {
+                forward *= 0.5f;
+            }
+
+            // Move
+            Vec3d input = new Vec3d(0, 0.0, forward);
+            super.travel(input);
+            return;
+        }
+
         super.travel(movementInput);
     }
 
-    // Riding and controlling
+    public void takeOff() {
+
+    }
+
     @Override
     protected Vec3d getPassengerAttachmentPos(Entity passenger, EntityDimensions dimensions, float scaleFactor) {
         return super.getPassengerAttachmentPos(passenger, dimensions, scaleFactor).add(0, 0.05, 0);
     }
 
-    // Dismounting
+    // Dismounting: try multiple offsets around the entity for a safer exit
+    @Override
+    public Vec3d updatePassengerForDismount(LivingEntity passenger) {
+        // Primary: right side relative to main arm
+        Vec3d right = AbstractHorseEntity.getPassengerDismountOffset(
+                this.getWidth(), passenger.getWidth(),
+                this.getYaw() + (passenger.getMainArm() == Arm.RIGHT ? 90.0f : -90.0f)
+        );
+
+        Vec3d pos = this.locateSafeDismountingPos(right, passenger);
+        if (pos != null) return pos;
+
+        // Secondary: opposite side
+        Vec3d left = AbstractHorseEntity.getPassengerDismountOffset(
+                this.getWidth(), passenger.getWidth(),
+                this.getYaw() + (passenger.getMainArm() == Arm.LEFT ? 90.0f : -90.0f)
+        );
+        pos = this.locateSafeDismountingPos(left, passenger);
+        if (pos != null) return pos;
+
+        // Additional candidates: forward, back, and diagonals around the mount
+        float yawRad = this.getYaw() * MathHelper.RADIANS_PER_DEGREE;
+        double cos = MathHelper.cos(yawRad);
+        double sin = MathHelper.sin(yawRad);
+
+        Vec3d[] candidates = new Vec3d[]{
+                new Vec3d(0.0, 0.0, 1.0),
+                new Vec3d(0.0, 0.0, -1.0),
+                new Vec3d(1.0, 0.0, 0.0),
+                new Vec3d(-1.0, 0.0, 0.0),
+                new Vec3d(1.0, 0.0, 1.0),
+                new Vec3d(-1.0, 0.0, 1.0),
+                new Vec3d(1.0, 0.0, -1.0),
+                new Vec3d(-1.0, 0.0, -1.0)
+        };
+
+        double radius = (this.getWidth() * 0.5) + passenger.getWidth() + 0.25;
+
+        for (Vec3d local : candidates) {
+            double localX = local.x * radius;
+            double localZ = local.z * radius;
+            double worldX = localX * cos - localZ * sin;
+            double worldZ = localX * sin + localZ * cos;
+
+            Vec3d candidate = new Vec3d(worldX, 0.0, worldZ);
+            pos = this.locateSafeDismountingPos(candidate, passenger);
+            if (pos != null) return pos;
+        }
+
+        return this.getPos();
+    }
+
     @Nullable
     private Vec3d locateSafeDismountingPos(Vec3d offset, LivingEntity passenger) {
         double d = this.getX() + offset.x;
         double e = this.getBoundingBox().minY;
         double f = this.getZ() + offset.z;
         BlockPos.Mutable mutable = new BlockPos.Mutable();
+
         block0:
         for (EntityPose entityPose : passenger.getPoses()) {
             mutable.set(d, e, f);
-            double g = this.getBoundingBox().maxY + 0.75;
+            double maxY = this.getBoundingBox().maxY + 0.75;
             do {
-                double h = this.getWorld().getDismountHeight(mutable);
-                if ((double) mutable.getY() + h > g) continue block0;
-                if (Dismounting.canDismountInBlock(h)) {
+                double dismountHeight = this.getWorld().getDismountHeight(mutable);
+                if ((double) mutable.getY() + dismountHeight > maxY) continue block0;
+                if (Dismounting.canDismountInBlock(dismountHeight)) {
                     Box box = passenger.getBoundingBox(entityPose);
-                    Vec3d vec3d = new Vec3d(d, (double) mutable.getY() + h, f);
-                    if (Dismounting.canPlaceEntityAt(this.getWorld(), passenger, box.offset(vec3d))) {
+                    Vec3d place = new Vec3d(d, (double) mutable.getY() + dismountHeight, f);
+                    if (Dismounting.canPlaceEntityAt(this.getWorld(), passenger, box.offset(place))) {
                         passenger.setPose(entityPose);
-                        return vec3d;
+                        return place;
                     }
                 }
                 mutable.move(Direction.UP);
-            } while ((double) mutable.getY() < g);
+            } while ((double) mutable.getY() < maxY);
         }
         return null;
-    }
-
-    @Override
-    public Vec3d updatePassengerForDismount(LivingEntity passenger) {
-        Vec3d vec3d = AbstractHorseEntity.getPassengerDismountOffset(this.getWidth(), passenger.getWidth(), this.getYaw() + (passenger.getMainArm() == Arm.RIGHT ? 90.0f : -90.0f));
-        Vec3d vec3d2 = this.locateSafeDismountingPos(vec3d, passenger);
-        if (vec3d2 != null) {
-            return vec3d2;
-        }
-        Vec3d vec3d3 = AbstractHorseEntity.getPassengerDismountOffset(this.getWidth(), passenger.getWidth(), this.getYaw() + (passenger.getMainArm() == Arm.LEFT ? 90.0f : -90.0f));
-        Vec3d vec3d4 = this.locateSafeDismountingPos(vec3d3, passenger);
-        if (vec3d4 != null) {
-            return vec3d4;
-        }
-        return this.getPos();
     }
 
     @Override
