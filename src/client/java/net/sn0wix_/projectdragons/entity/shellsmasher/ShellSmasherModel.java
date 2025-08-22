@@ -30,14 +30,9 @@ public class ShellSmasherModel extends GeoModel<ShellSmasherEntity> {
 
     @Override
     public void setCustomAnimations(ShellSmasherEntity animatable, long instanceId, AnimationState<ShellSmasherEntity> animationState) {
-        if (animatable.canMoveHead()) {
-            GeoBone neck = this.getAnimationProcessor().getBone("h_head");
-            GeoBone head = this.getAnimationProcessor().getBone("h_head2");
-            moveHead(animationState, neck, head);
-        }
-    }
+        GeoBone neck = this.getAnimationProcessor().getBone("h_head");
+        GeoBone head = this.getAnimationProcessor().getBone("h_head2");
 
-    public void moveHead(AnimationState<ShellSmasherEntity> animationState, GeoBone neck, GeoBone head) {
         EntityModelData entityData = animationState.getData(DataTickets.ENTITY_MODEL_DATA);
         float pitch = entityData.headPitch() * ((float) Math.PI / 180F);
         float yaw = entityData.netHeadYaw() * ((float) Math.PI / 180F);
@@ -45,10 +40,13 @@ public class ShellSmasherModel extends GeoModel<ShellSmasherEntity> {
         pitch = (float) (pitch * Math.cos(pitch));
         yaw = (float) (yaw * Math.cos(yaw) * 2);
 
-        neck.setRotX(pitch / 2);
-        neck.setRotY(yaw / 2);
+        System.out.println(neck.getRotX());
+        System.out.println(neck.getRotY());
 
-        head.setRotX(pitch / 2);
-        head.setRotY(yaw / 2);
+        neck.setRotX(neck.getRotX() + pitch / 2);
+        neck.setRotY(neck.getRotY() + yaw / 2);
+
+        head.setRotX(head.getRotX() + pitch / 2);
+        head.setRotY(head.getRotY() + yaw / 2);
     }
 }
