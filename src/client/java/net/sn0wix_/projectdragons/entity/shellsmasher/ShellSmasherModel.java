@@ -1,5 +1,6 @@
 package net.sn0wix_.projectdragons.entity.shellsmasher;
 
+import net.minecraft.entity.EntityPose;
 import net.minecraft.util.Identifier;
 import net.sn0wix_.projectdragons.ProjectDragons;
 import net.sn0wix_.projectdragons.entity.custom.ShellSmasherEntity;
@@ -10,6 +11,8 @@ import software.bernie.geckolib.model.GeoModel;
 import software.bernie.geckolib.model.data.EntityModelData;
 
 public class ShellSmasherModel extends GeoModel<ShellSmasherEntity> {
+    private int customAnimDelay = 0;
+
     @Override
     public Identifier getModelResource(ShellSmasherEntity entity) {
         return Identifier.of(ProjectDragons.MOD_ID, "geo/shellsmasher.geo.json");
@@ -27,22 +30,25 @@ public class ShellSmasherModel extends GeoModel<ShellSmasherEntity> {
 
     @Override
     public void setCustomAnimations(ShellSmasherEntity animatable, long instanceId, AnimationState<ShellSmasherEntity> animationState) {
-        GeoBone neck = this.getAnimationProcessor().getBone("h_head");
-        GeoBone head = this.getAnimationProcessor().getBone("h_head2");
-
-        if (neck != null && head != null) {
-            EntityModelData entityData = animationState.getData(DataTickets.ENTITY_MODEL_DATA);
-            float pitch = entityData.headPitch() * ((float) Math.PI / 180F);
-            float yaw = entityData.netHeadYaw() * ((float) Math.PI / 180F);
-
-            pitch = (float) (pitch * Math.cos(pitch));
-            yaw = (float) (yaw * Math.cos(yaw) * 2);
-
-            neck.setRotX(pitch / 2);
-            neck.setRotY(yaw / 2);
-
-            head.setRotX(pitch / 2);
-            head.setRotY(yaw / 2);
+        if (animatable.canMoveHead()) {
+            GeoBone neck = this.getAnimationProcessor().getBone("h_head");
+            GeoBone head = this.getAnimationProcessor().getBone("h_head2");
+            moveHead(animationState, neck, head);
         }
+    }
+
+    public void moveHead(AnimationState<ShellSmasherEntity> animationState, GeoBone neck, GeoBone head) {
+        EntityModelData entityData = animationState.getData(DataTickets.ENTITY_MODEL_DATA);
+        float pitch = entityData.headPitch() * ((float) Math.PI / 180F);
+        float yaw = entityData.netHeadYaw() * ((float) Math.PI / 180F);
+
+        pitch = (float) (pitch * Math.cos(pitch));
+        yaw = (float) (yaw * Math.cos(yaw) * 2);
+
+        neck.setRotX(pitch / 2);
+        neck.setRotY(yaw / 2);
+
+        head.setRotX(pitch / 2);
+        head.setRotY(yaw / 2);
     }
 }

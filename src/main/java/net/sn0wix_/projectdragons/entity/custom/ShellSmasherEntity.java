@@ -31,6 +31,8 @@ import software.bernie.geckolib.util.GeckoLibUtil;
 public class ShellSmasherEntity extends TameableEntity implements GeoEntity, VariantHolder<ShellSmasherVariants>, Saddleable {
     private static final TrackedData<Integer> VARIANT = DataTracker.registerData(ShellSmasherEntity.class, TrackedDataHandlerRegistry.INTEGER);
     private static final TrackedData<Boolean> HAS_SADDLE = DataTracker.registerData(ShellSmasherEntity.class, TrackedDataHandlerRegistry.BOOLEAN);
+    private static final TrackedData<Boolean> CAN_MOVE_HEAD = DataTracker.registerData(ShellSmasherEntity.class, TrackedDataHandlerRegistry.BOOLEAN);
+
 
     private int ticksToActuallyStandUp = -1;
 
@@ -91,6 +93,8 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
         if (this.isSitting()) {
             return;
         }
+
+        this.dataTracker.set(CAN_MOVE_HEAD, false);
         this.playSound(SoundEvents.ENTITY_CAMEL_SIT);
         this.setPose(EntityPose.SITTING);
         genericController.tryTriggerAnimation("sit");
@@ -107,7 +111,6 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
         this.playSound(SoundEvents.ENTITY_CAMEL_STAND);
         genericController.tryTriggerAnimation("stand_up");
         this.setPose(EntityPose.STANDING);
-        this.emitGameEvent(GameEvent.ENTITY_ACTION);
         ticksToActuallyStandUp = 40;
     }
 
@@ -155,6 +158,8 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
                 ticksToActuallyStandUp--;
                 setInSittingPose(false);
                 setSitting(false);
+                this.emitGameEvent(GameEvent.ENTITY_ACTION);
+                this.dataTracker.set(CAN_MOVE_HEAD, true);
             }
         }
     }
@@ -185,6 +190,10 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
         return false;
     }
 
+    public boolean canMoveHead() {
+        return this.dataTracker.get(CAN_MOVE_HEAD);
+    }
+
 
     // Data saving and syncing
     @Override
@@ -192,6 +201,7 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
         super.initDataTracker(builder);
         builder.add(VARIANT, 0);
         builder.add(HAS_SADDLE, false);
+        builder.add(CAN_MOVE_HEAD, true);
     }
 
     @Override
@@ -199,6 +209,7 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
         super.writeCustomDataToNbt(nbt);
         nbt.putInt("Variant", this.getEntityVariant());
         nbt.putBoolean("HasSaddle", this.dataTracker.get(HAS_SADDLE));
+        nbt.putBoolean("CanMoveHead", this.dataTracker.get(CAN_MOVE_HEAD));
     }
 
     @Override
@@ -206,6 +217,7 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
         super.readCustomDataFromNbt(nbt);
         this.setEntityVariant(nbt.getInt("Variant"));
         this.dataTracker.set(HAS_SADDLE, nbt.getBoolean("HasSaddle"));
+        this.dataTracker.set(CAN_MOVE_HEAD, nbt.getBoolean("CanMoveHead"));
     }
 
 
