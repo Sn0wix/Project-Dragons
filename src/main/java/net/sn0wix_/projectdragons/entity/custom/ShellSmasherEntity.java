@@ -1,5 +1,6 @@
 package net.sn0wix_.projectdragons.entity.custom;
 
+import net.minecraft.block.BlockState;
 import net.minecraft.entity.*;
 import net.minecraft.entity.ai.goal.*;
 import net.minecraft.entity.attribute.DefaultAttributeContainer;
@@ -81,6 +82,7 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
     public void initGoals() {
         this.goalSelector.add(0, new SwimGoal(this));
         this.goalSelector.add(2, new SitGoal(this));
+        this.goalSelector.add(5, new FollowOwnerGoal(this, 1f, 8, 64));
         this.goalSelector.add(6, new WanderAroundFarGoal(this, 1));
         this.goalSelector.add(7, new LookAtEntityGoal(this, PlayerEntity.class, 6.0f));
         this.goalSelector.add(8, new LookAroundGoal(this));
@@ -257,6 +259,32 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
             }
 
             if (dataTracker.get(IS_FLYING)) {
+                if (this.isLogicalSideForUpdatingMovement()) {
+                    if (this.isTouchingWater()) {
+                        this.updateVelocity(0.02f, movementInput);
+                        this.move(MovementType.SELF, this.getVelocity());
+                        this.setVelocity(this.getVelocity().multiply(0.8f));
+                    } else if (this.isInLava()) {
+                        this.updateVelocity(0.02f, movementInput);
+                        this.move(MovementType.SELF, this.getVelocity());
+                        this.setVelocity(this.getVelocity().multiply(0.5));
+                    } else {
+                        float f = 0.91f;
+                        if (this.isOnGround()) {
+                            f = this.getWorld().getBlockState(this.getVelocityAffectingPos()).getBlock().getSlipperiness() * 0.91f;
+                        }
+                        float g = 0.16277137f / (f * f * f);
+                        f = 0.91f;
+                        if (this.isOnGround()) {
+                            f = this.getWorld().getBlockState(this.getVelocityAffectingPos()).getBlock().getSlipperiness() * 0.91f;
+                        }
+                        this.updateVelocity(this.isOnGround() ? 0.1f * g : 0.02f, movementInput);
+                        this.move(MovementType.SELF, this.getVelocity());
+                        this.setVelocity(this.getVelocity().multiply(f));
+                    }
+                }
+                this.updateLimbs(false);
+
                 this.updateVelocity((float) getAttributeBaseValue(EntityAttributes.GENERIC_MOVEMENT_SPEED), movementInput);
                 this.move(MovementType.SELF, this.getVelocity());
                 this.setVelocity(this.getVelocity().multiply(0.91F));
@@ -281,8 +309,8 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
                 // Move
                 Vec3d input = new Vec3d(0, 0.0, forward);
                 super.travel(input);
-                return;
             }
+            return;
         }
 
         super.travel(movementInput);
@@ -310,7 +338,7 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
                 h += 0.5F;
             }
 
-            return (new Vec3d((double) f, (double) h, (double) g)).multiply((double) 3.9F * this.getAttributeValue(EntityAttributes.GENERIC_MOVEMENT_SPEED));
+            return (new Vec3d(f, h, g)).multiply((double) 3.9F * this.getAttributeValue(EntityAttributes.GENERIC_MOVEMENT_SPEED) / 4);
         }
         return super.getControlledMovementInput(controllingPlayer, movementInput);
     }
@@ -326,10 +354,9 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
             Vec2f vec2f = this.getGhastRotation(controllingPlayer);
             float f = this.getYaw();
             float g = MathHelper.wrapDegrees(vec2f.y - f);
-            float h = 0.08F;
             f += g * 0.08F;
             this.setRotation(f, vec2f.x);
-            /*this.prevYaw = */this.bodyYaw = this.headYaw = f;
+            this.bodyYaw = this.headYaw = f;
         }
     }
 
@@ -434,6 +461,24 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
             return passenger;
         }
         return super.getControllingPassenger();
+    }
+
+    // Flying entity
+    @Override
+    protected void fall(double heightDifference, boolean onGround, BlockState state, BlockPos landedPosition) {
+        if (!dataTracker.get(IS_FLYING)) {
+            super.fall(heightDifference, onGround, state, landedPosition);
+        }
+    }
+
+    /*@Override
+    public void travel(Vec3d movementInput) {
+
+    }*/
+
+    @Override
+    public boolean isClimbing() {
+        return !dataTracker.get(IS_FLYING) && super.isClimbing();
     }
 
     // Saddle
