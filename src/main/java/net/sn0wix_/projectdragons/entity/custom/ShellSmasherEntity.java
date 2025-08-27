@@ -19,7 +19,6 @@ import net.minecraft.item.Items;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundCategory;
-import net.minecraft.sound.SoundEvent;
 import net.minecraft.sound.SoundEvents;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Arm;
@@ -27,6 +26,7 @@ import net.minecraft.util.Hand;
 import net.minecraft.util.math.*;
 import net.minecraft.world.World;
 import net.minecraft.world.event.GameEvent;
+import net.sn0wix_.projectdragons.entity.ModEntities;
 import org.jetbrains.annotations.Nullable;
 import software.bernie.geckolib.animatable.GeoEntity;
 import software.bernie.geckolib.animatable.instance.AnimatableInstanceCache;
@@ -47,7 +47,12 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
     public boolean riderIsJumping = false;
 
     RawAnimation WALK = RawAnimation.begin().then("move.walk", Animation.LoopType.LOOP);
+    RawAnimation WALK_BACKWORDS = RawAnimation.begin().then("move.walk_back", Animation.LoopType.LOOP);
+
     RawAnimation FLY = RawAnimation.begin().then("move.fly", Animation.LoopType.LOOP);
+    RawAnimation TAKE_OFF = RawAnimation.begin().then("move.takeoff", Animation.LoopType.PLAY_ONCE);
+    RawAnimation LAND = RawAnimation.begin().then("move.land", Animation.LoopType.PLAY_ONCE);
+
     RawAnimation IDLE = RawAnimation.begin().then("move.idle", Animation.LoopType.LOOP);
     RawAnimation SIT = RawAnimation.begin().then("sleep.enter", Animation.LoopType.PLAY_ONCE);
     RawAnimation SITTING = RawAnimation.begin().then("sleep.idle", Animation.LoopType.LOOP);
@@ -62,7 +67,10 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
             }
 
             if (handler.isMoving()) {
-                // TODO reverse walking anim
+                if (this.getControllingPassenger() instanceof PlayerEntity player && player.forwardSpeed < 0) {
+                    return handler.setAndContinue(WALK_BACKWORDS);
+                }
+
                 return handler.setAndContinue(WALK);
             }
 
@@ -70,7 +78,7 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
         } else {
             return handler.setAndContinue(FLY);
         }
-    })).triggerableAnim("sit", SIT).triggerableAnim("stand_up", STAND_UP);
+    })).triggerableAnim("sit", SIT).triggerableAnim("stand_up", STAND_UP).triggerableAnim("take_off", TAKE_OFF).triggerableAnim("land", LAND);
 
     public ShellSmasherEntity(EntityType<? extends TameableEntity> entityType, World world) {
         super(entityType, world);
@@ -93,7 +101,8 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
                 .add(EntityAttributes.GENERIC_MOVEMENT_SPEED, 0.2f)
                 .add(EntityAttributes.GENERIC_SAFE_FALL_DISTANCE, 6)
                 .add(EntityAttributes.GENERIC_MAX_HEALTH, 40)
-                .add(EntityAttributes.GENERIC_KNOCKBACK_RESISTANCE, 0.9f);
+                .add(EntityAttributes.GENERIC_KNOCKBACK_RESISTANCE, 0.9f)
+                .add(ModEntities.Attributes.GENERIC_FLYING_SPEED, 1f);
     }
 
     public void toggleSitting() {
@@ -195,7 +204,7 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
             }
         }
 
-        if (riderIsJumping && !dataTracker.get(IS_FLYING)/* && standUpMovementLockTicks <= 0*/) {
+        if (riderIsJumping && !dataTracker.get(IS_FLYING) && standUpMovementLockTicks <= 0) {
             takeOff();
         }
     }
@@ -285,7 +294,7 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
                 }
                 this.updateLimbs(false);
 
-                this.updateVelocity((float) getAttributeBaseValue(EntityAttributes.GENERIC_MOVEMENT_SPEED), movementInput);
+                this.updateVelocity((float) getAttributeBaseValue(ModEntities.Attributes.GENERIC_FLYING_SPEED), movementInput);
                 this.move(MovementType.SELF, this.getVelocity());
                 this.setVelocity(this.getVelocity().multiply(0.91F));
             } else {
@@ -307,7 +316,7 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
                 }
 
                 // Move
-                Vec3d input = new Vec3d(0, 0.0, forward);
+                Vec3d input = new Vec3d(0, 0, forward);
                 super.travel(input);
             }
             return;
@@ -338,8 +347,9 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
                 h += 0.5F;
             }
 
-            return (new Vec3d(f, h, g)).multiply((double) 3.9F * this.getAttributeValue(EntityAttributes.GENERIC_MOVEMENT_SPEED) / 4);
+            return (new Vec3d(f, h, g)).multiply((double) 3.9F * this.getAttributeValue(ModEntities.Attributes.GENERIC_FLYING_SPEED) / 10);
         }
+        
         return super.getControlledMovementInput(controllingPlayer, movementInput);
     }
 
@@ -361,12 +371,18 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
     }
 
     public void takeOff() {
-        this.jump();
         this.setFlying(true);
+        this.jump();
         this.setNoGravity(true);
         this.fallDistance = 0;
         this.emitGameEvent(GameEvent.ENTITY_ACTION);
         this.playSound(SoundEvents.ENTITY_PHANTOM_FLAP, 0.6f, 1.0f);
+        this.genericController.tryTriggerAnimation("take_off");
+    }
+
+    @Override
+    protected float getJumpVelocityMultiplier() {
+        return super.getJumpVelocityMultiplier() * (isFlying() ? 1.5f : 1);
     }
 
     @Override
@@ -468,13 +484,17 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
     protected void fall(double heightDifference, boolean onGround, BlockState state, BlockPos landedPosition) {
         if (!dataTracker.get(IS_FLYING)) {
             super.fall(heightDifference, onGround, state, landedPosition);
+        } else {
+            if (isOnGround()) {
+                this.setFlying(false);
+                this.setNoGravity(false);
+                this.fallDistance = 0;
+                this.emitGameEvent(GameEvent.ENTITY_ACTION);
+                this.playSound(SoundEvents.ENTITY_BREEZE_LAND, 0.6f, 1.0f);
+                this.genericController.tryTriggerAnimation("land");
+            }
         }
     }
-
-    /*@Override
-    public void travel(Vec3d movementInput) {
-
-    }*/
 
     @Override
     public boolean isClimbing() {
@@ -533,7 +553,6 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
         nbt.putInt("Variant", this.getEntityVariant());
         nbt.putBoolean("HasSaddle", this.dataTracker.get(HAS_SADDLE));
         nbt.putBoolean("IsFlying", this.dataTracker.get(IS_FLYING));
-        nbt.putBoolean("IsInSittingPose", this.isInSittingPose());
     }
 
     @Override
@@ -542,7 +561,7 @@ public class ShellSmasherEntity extends TameableEntity implements GeoEntity, Var
         this.setEntityVariant(nbt.getInt("Variant"));
         this.dataTracker.set(HAS_SADDLE, nbt.getBoolean("HasSaddle"));
         this.dataTracker.set(IS_FLYING, nbt.getBoolean("IsFlying"));
-        this.setInSittingPose(nbt.getBoolean("IsInSittingPose"));
+        this.setInSittingPose(isSitting());
     }
 
     // Variants

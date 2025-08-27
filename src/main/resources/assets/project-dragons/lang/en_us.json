@@ -1,3 +1,5 @@
 {
-  "entity.project-dragons.shell_smasher": "Shell Smasher"
+  "entity.project-dragons.shell_smasher": "Shell Smasher",
+
+  "attribute.name.generic.flying_speed": "Flying Speed"
 }
